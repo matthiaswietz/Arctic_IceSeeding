@@ -1,0 +1,366 @@
+---
+title: "Microbial and chemical signatures of melting sea-ice: 18S rRNA amplicons"
+---
+
+This markdown describes the processing of 18S rRNA amplicons from a microcosm experiment with melting sea-ice (DOI:).
+
+
+```{console}
+
+################################################################  
+## Primer clipping
+################################################################
+
+cd /isibhv/projects/FRAMdata/MolObs/IceExp_PS121/EUKs
+
+# Fetch fastqs from TapeArchive via custom script
+/isibhv/projects/p_bioinf2/miseq/copy-files-from-tape.sh fastq.txt
+
+# Rename / remove MiSeq run-ID 
+rename 'M03457_0058_000000000-J3FNT' 'Original' *
+
+# First test-run showed a name-related cutadapt error
+# Files are therefore renamed -- logged in rename_log.txt
+# Renamed files  written to directory OriginalRename
+cd Original
+
+# Define the log file in the parent directory
+LOG_FILE="../rename_log.txt"
+
+# Create or empty the log file
+> "$LOG_FILE"
+
+# Create a new directory for renamed copies
+mkdir -p ../OriginalRename
+
+# Initialize a counter for sequential naming
+counter=1
+
+# Loop through the R1 files in the directory
+for file in *_R1_001.fastq.gz; do
+# Extract the base name without _R1_001.fastq.gz
+base_name=$(basename "$file" "_R1_001.fastq.gz")
+
+# Define new base name with sequential counter
+new_base_name=$(printf "file%03d" "$counter")
+
+# Define new R1 and R2 file names
+new_r1_file="${new_base_name}_R1.fastq.gz"
+new_r2_file="${new_base_name}_R2.fastq.gz"
+
+# Rename the R1 and R2 files
+mv "${base_name}_R1_001.fastq.gz" "$new_r1_file"
+mv "${base_name}_R2_001.fastq.gz" "$new_r2_file"
+
+# Copy the renamed files to the new directory
+cp "$new_r1_file" "../OriginalRename/$new_r1_file"
+cp "$new_r2_file" "../OriginalRename/$new_r2_file"
+
+# Log the old and new file names in tab-delimited format
+echo -e "${base_name}_R1_001.fastq.gz\t${new_r1_file}" >> "$LOG_FILE"
+echo -e "${base_name}_R2_001.fastq.gz\t${new_r2_file}" >> "$LOG_FILE"
+
+# Increment the counter
+counter=$((counter + 1))
+done
+cd ..
+
+# Load cutadapt
+module load /albedo/soft/modules/bio/cutadapt/4.4
+
+# Run custom script 
+bash ../../software/cutadapt.sh ./OriginalRename GCGGTAATTCCAGCTCCAA ACTTTCGTTCTTGATYRR
+
+# Add "_clip" label and 16S identifer
+# First: test-rename
+cd Clipped
+for i in *fastq.gz; do
+  nname="${i%.fastq.gz}_18S_clip.fastq.gz"
+  echo "Test run: $i -> $nname"
+done
+
+# if looking OK - execute:  
+for i in *fastq.gz; do
+  nname="${i%.fastq.gz}_18S_clip.fastq.gz"
+  mv "$i" "$nname"
+done
+
+# write sampleNames for dada
+ls -1 *R1_18S_clip.fastq.gz | sed 's/_R1_18S_clip\.fastq.gz/_18S_clip/' | sort -u > ../sampleNames.txt
+
+```
+
+*DADA2 amplicon analysis*
+
+# done in RStudio within AWI-VM
+# provided IP address opened in browser
+# adjust for your own system 
+
+```{r, eval = F}
+
+require(dada2)
+require(ShortRead)
+require(ggplot2)
+require(gridExtra)
+library(iNEXT)
+
+#########################################
+
+setwd("/isibhv/projects/FRAMdata/MolObs/IceExp_PS121/EUKs/")
+
+# List files
+path <- "/isibhv/projects/FRAMdata/MolObs/IceExp_PS121/EUKs/Clipped"
+fns <- list.files(path)
+fns
+
+# Ensure fwd/rev reads in same order
+fnFs <- sort(list.files(path, pattern="_R1_18S_clip.fastq.gz"))
+fnRs <- sort(list.files(path, pattern="_R2_18S_clip.fastq.gz"))
+
+# Define sample names
+sampleNames <- sort(read.table(
+  "sampleNames.txt", 
+  h=F, stringsAsFactors=F)$V1)
+
+# Specify the full path to fnFs & fnRs
+fnFs <- file.path(path, fnFs)
+fnRs <- file.path(path, fnRs)
+
+#################################
+
+# Quality control
+QualityProfileFs <- list()
+for(i in 1:length(fnFs)) {QualityProfileFs[[i]] <- list()
+QualityProfileFs[[i]][[1]] <- plotQualityProfile(fnFs[i])}
+pdf("QualityProfileForward.pdf")
+for(i in 1:length(fnFs)) {do.call(
+  "grid.arrange", QualityProfileFs[[i]])}
+dev.off()
+rm(QualityProfileFs)
+
+QualityProfileRs <- list()
+for(i in 1:length(fnRs)) {
+  QualityProfileRs[[i]] <- list()
+  QualityProfileRs[[i]][[1]] <- plotQualityProfile(
+    fnRs[i])}
+pdf("QualityProfileReverse.pdf")
+for(i in 1:length(fnRs)) {do.call(
+  "grid.arrange", QualityProfileRs[[i]])}
+dev.off()
+rm(QualityProfileRs)
+
+# Prepare for filtering
+filt_path <- file.path(
+  "/isibhv/projects/FRAMdata/MolObs/IceExp_PS121/EUKs/Filtered")
+if(!file_test("-d", filt_path)) dir.create(filt_path)
+filtFs <- file.path(
+  filt_path, paste0(sampleNames, "_F_filt.fastq"))
+filtRs <- file.path(
+  filt_path, paste0(sampleNames, "_R_filt.fastq"))
+
+###############################
+## Filter 
+# Consider expected overlap
+# truncLen based on QualityProfile (low-Q rev-reads)
+out <- filterAndTrim(
+  fnFs, 
+  filtFs, 
+  fnRs, 
+  filtRs,
+  truncLen = c(250, 195),
+  maxN = 0,
+  minQ = 2,
+  maxEE = c(3, 3), 
+  truncQ = 0, 
+  rm.phix = T,
+  compress = F)
+
+# Should retain >70% -- OK!
+# outlier = NegCtr
+head(out)
+summary(out[, 2]/out[, 1])
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1649  0.7889  0.8513  0.8006  0.8648  0.8779 
+ 
+################################
+
+# Quality check 
+QualityProfileFs.filt <- list()
+for(i in 1:length(filtFs)) {
+  QualityProfileFs.filt[[i]] <- list()
+  QualityProfileFs.filt[[i]][[1]] <- plotQualityProfile(
+    filtFs[i])}
+pdf("QualityProfileForwardFiltered.pdf")
+for(i in 1:length(filtFs)) {do.call(
+  "grid.arrange", QualityProfileFs.filt[[i]])}
+dev.off()
+rm(QualityProfileFs.filt)
+
+QualityProfileRs.filt <- list()
+for(i in 1:length(filtRs)) {
+  QualityProfileRs.filt[[i]] <- list()
+  QualityProfileRs.filt[[i]][[1]] <- plotQualityProfile(
+    filtRs[i])}
+pdf("QualityProfileReverseFiltered.pdf")
+for(i in 1:length(filtRs)) {do.call(
+  "grid.arrange", QualityProfileRs.filt[[i]])}
+dev.off()
+rm(QualityProfileRs.filt)
+
+#########################
+
+# Learn errors 
+errF <- learnErrors(
+  filtFs, multithread=T, 
+  randomize=T, verbose=1, MAX_CONSIST=10)
+errR <- learnErrors(
+  filtRs, multithread=T, 
+  randomize=T, verbose=1, MAX_CONSIST=10)
+
+# Plot error profiles
+pdf("ErrorProfiles.pdf")
+plotErrors(errF, nominalQ=T)
+plotErrors(errR, nominalQ=T)
+dev.off()
+# convergence after 5 / 5 rounds - ok!
+# some outliers outside black line - more than BACs -- still ok
+
+# Dereplication 
+derepFs <- derepFastq(filtFs, verbose=T)
+derepRs <- derepFastq(filtRs, verbose=T)
+
+# Rename by clip-filenames
+names(derepFs) <- sampleNames
+names(derepRs) <- sampleNames
+
+# Denoising
+dadaFs <- dada(
+  derepFs, err=errF, multithread=T, pool=T)
+dadaRs <- dada(
+  derepRs, err=errR, multithread=T, pool=T)
+
+#################################
+
+# Read merging
+mergers <- mergePairs(
+  dadaFs, 
+  derepFs, 
+  dadaRs,
+  derepRs,
+  minOverlap=20,
+  verbose=T)
+
+# Create sequence table
+seqtab <- makeSequenceTable(mergers)
+
+# 32 samples -- 3678 sequences
+dim(seqtab) 
+
+# Remove chimeras 
+seqtab.nochim <- removeBimeraDenovo(
+  seqtab, method = "consensus", 
+  multithread=T, verbose=T)
+# 1624  bimeras / 3678 sequences
+
+# Quite high number... therefore checked:
+sum(seqtab.nochim)/sum(seqtab) # 0.99
+# so chimeras correspond to many low-abundance reads
+# hence, the overall community profile is not really affected
+
+# 24 samples -- 2054 sequences
+dim(seqtab.nochim)  
+
+# Summary stats
+summary(rowSums(seqtab.nochim)/rowSums(seqtab))
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.9533  0.9944  0.9967  0.9942  0.9975  0.9999 
+
+# Determine amplicon length/size range 
+table(rep(nchar(
+  colnames(seqtab.nochim)), 
+  colSums(seqtab.nochim)))
+
+# Remove singletons and "junk" sequences
+# "c" adjusted to size range of amplicons
+seqtab.nochim2 <- seqtab.nochim[, nchar(
+  colnames(seqtab.nochim)) %in% c(356:423) & 
+    colSums(seqtab.nochim) > 1]
+
+# 32 samples -- 1790 seqs 
+dim(seqtab.nochim2) 
+
+# Some summary stats
+summary(rowSums(seqtab.nochim2))
+#  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  93  128658  151314  156066  183702  255788 
+summary(rowSums(seqtab.nochim2)/rowSums(seqtab.nochim))
+#  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.9940  0.9992  0.9997  0.9993  1.0000  1.0000 
+
+################################
+## TAXONOMY -- PR2 4.14
+tax <- assignTaxonomy(
+  seqtab.nochim2, 
+  "../../tax_db/pr2_version_4.14.0_SSU_dada2.fasta.gz", 
+  tryRC = T,
+  multithread = T)
+
+#  Eukaryota 1772 Eukaryota:nucl  8
+table(tax[, 1])   
+
+# Remove NA on phylum level
+sum(is.na(tax[, 2])) #235
+tax.good <- tax[!is.na(tax[, 2]),]
+seqtab.nochim2.good <- seqtab.nochim2[
+  , rownames(tax.good)]
+
+# Summary stats
+summary(rowSums(seqtab.nochim2.good))
+#  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  92  122818  147202  153105  183598  255458 
+
+# Format tables
+seqtab.nochim2.print <- t(seqtab.nochim2.good)
+tax.print <- tax.good
+all.equal(rownames(
+  seqtab.nochim2.print), 
+  rownames(tax.print)) #TRUE
+rownames(seqtab.nochim2.print) <- paste(
+  "asv", 1:ncol(seqtab.nochim2.good), sep = "")
+rownames(tax.print) <- rownames(seqtab.nochim2.print)
+
+# Summary stats
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(
+  dadaFs, getN), sapply(mergers, getN), 
+  rowSums(seqtab))
+colnames(track) <- c(
+  "input","filtered","denoised",
+  "merged","tabled")
+rownames(track) <- sampleNames
+track <- data.frame(track)
+head(track)
+
+################################
+
+# Export output
+write.table(
+  seqtab.nochim2.print,"IceExp_18S_asv.txt", sep="\t", quote=F)
+write.table(
+  tax.print,"IceExp_18S_tax.txt", sep="\t", quote=F)
+uniquesToFasta(
+  seqtab.nochim2.good, "IceExp_18S_asv.fasta")
+write.table(
+  track, "dadastats_IceExp_18S.txt", 
+  quote=F, sep="\t")
+
+# Calculate alpha-diversity
+read.table("IceExp_18S_asv.txt", h=T, sep="\t", check.names=F) %>% iNEXT(datatype="abundance", q=c(0), conf=0.95, nboot=50) -> iNEXT.euk
+
+save.image("IceExp_18S.Rdata")
+save(iNEXT.euk, file="iNEXT_18S.Rdata")
+
+save.image("IceExp_18S.Rdata")
+
+```
+
