@@ -1,8 +1,6 @@
-This repo describes microbial and chemical analyses from Cardozo et al. (DOI). Here, we studied the seeding of microbes and molecules form Arctic sea-ice to seawater during sea-ice melt. We used ribosomal metabarcoding to assess microeukaryotic and prokaryotic community dynamics. FT-ICR-MS identifed chemcial compounds in sea-ice and meltwater. Raw sequence data is available at ENA under BioProject (16S) and XX (18S).
+This repo describes microbial and chemical analyses from Cardozo et al. (DOI). Here, we studied the seeding of microbes and molecules from Arctic sea-ice to seawater during melt. We used ribosomal metabarcoding to assess microeukaryotic and prokaryotic community dynamics, coupled with FT-ICR-MS to identify chemical compounds. Raw sequence data is available at ENA under BioProjects XX (16S) and XX (18S). Raw FT-ICR-MS data is available under XX.
 
-Analyses were carried out using the following scripts & input files:  
--- Rmarkdowns describing primer-clipping and ASV generation; for both 16S and 18S rRNA amplicons   
--- Rscript for ASV and metadata processing, alpha-diversity calculations  
--- Rscript for generation of manuscript figures  
--- Rscript for generation of supplementary figures  
--- Metadata and environmental parameters as .txt files  
+-- Directory "dada" contains Rmarkdowns and output files from primer clipping and ASV generation  
+-- Directory "Scripts" contains Rscripts for ASV and metadata processing, alpha-diversity calculations, statistical analyses and figure 
+generation   
+-- Directory "metadata" contains all additional input files for analysis   
