@@ -56,32 +56,59 @@ DOC %>%
  ## DOM / FT-ICR-MS
 #############################################################
 
+## FIRTS: download full FT data from PANGAEA
+# 
+# Load into Excel
+# Remove information on top, so first line reads "Study type -- "Formula" -- ...
+# Export as csv file to working directory (for example named DOMdata.csv)
+
 # Load FT data
-D<-read.csv("DOMdata.csv")
+D<-read.csv("DOMdata.txt",sep="\t", check.names = F)
 
 # Load key table
 Dkey<-read.csv("DOC.txt",sep="\t")
 
 # Load all formulae (id<0 would mean keep only isotope verified, here we keep all)
-D1<-D[D$times_isotope_verified>=0,]
+D1<-D[D$`NOBS [#]`>=0,]
 
-# filter out all isotopologues (otherwise some formulae would be in there multiple times)
-D2<-D1[D1$C13==0&D1$N15==0&D1$S34==0&D1$O18==0,]
+# filter out all isotopologues (otherwise some formulae remain multiple times)
+D2<-D1[
+  D1$`13C atoms [#]`==0 & 
+  D1$`15N atoms [#]`==0 &
+  D1$`34S atoms [#]`==0 & 
+  D1$`18O atoms [#]`==0,]
 
-# filter more and rename columns and give IDs
-ID<-data.frame(sample=Dkey$SampleID_technical_duplicates,originalname=Dkey$original_sample_name,type=Dkey$condition,time=Dkey$time,core=Dkey$coreid)
-seawater=ID$sample[ID$type=="Ctr"&ID$time=="0h"]
-ice=ID$sample[ID$type=="IceMelt"&ID$time=="0h"]
+# filter more, rename columns, give IDs
+ID <- data.frame(
+  sample=Dkey$SampleID,
+  originalname=Dkey$original_sample_name,
+  type=Dkey$condition,
+  time=Dkey$time,
+  core=Dkey$coreid)
 
-D2$type<-D2$condition
+# Define samples
+seawater=ID$sample[ID$type=="Ctr" & ID$time=="0h"]
+ice=ID$sample[ID$type=="IceMelt" & ID$time=="0h"]
+
+D2$type<-D2$`Exp condition`
 D2$type[D2$type=="OrgIce"]<-"IceMelt"
 D2$type[D2$type=="OrgSW"]<-"Ctr"
 
 # new data frame with specific samples at time 0h
-IceVsSeaReference<-D2[D2$type%in%c("Ctr","IceMelt")&D2$time=="0h",]
+IceVsSeaReference <- D2[
+  D2$type %in% c("Ctr","IceMelt") & D2$`Time point`=="0h",]
+
+## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+### CHANGED AND CHECKED UNTIL HERE ###
+## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # sulfur compounds in ice and seawater references
-ggplot(IceVsSeaReference,aes(x=O/C,y=H/C,color=as.factor(S)))+geom_point()+facet_grid(S~type)+ggtitle("h=0")+scale_color_discrete("S")
+ggplot(
+  IceVsSeaReference,
+  aes(x=`O atoms [#]` / `C atoms [#]`, y=`H atoms [#]`/`C atoms [#]`, color=as.factor(`S atoms [#]`))) +
+  geom_point() +
+  facet_grid(`S atoms [#]`~type) + 
+  ggtitle("h=0")+scale_color_discrete("S")
 
 # get formulae unique to ice
 allice<-IceVsSeaReference%>%group_by(type,formula)%>%filter(n()==4 &type=="IceMelt")
