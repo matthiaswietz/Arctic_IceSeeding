@@ -1,6 +1,6 @@
 Rscripts & input files for data evaluation & figure creation. 
 
-Please run in numerical order:  
+Download all files (amplicon data in directory [dada](https://github.com/matthiaswietz/Arctic_IceSeeding/tree/main/dada), adjust your paths and run in numerical order:  
 _1_DataLoad.R  
 _2_RarefacDiversity.R  
 _Res1_CommunityComp.R  
